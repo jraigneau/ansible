@@ -1,0 +1,76 @@
+---
+- name: Install and configure {{ hosts }}
+  hosts: '{{ hosts }}'
+  remote_user: superman
+  sudo: yes
+  gather_facts: false
+  tasks:
+    - name: Update packages
+      apt: update_cache=yes
+
+    - name: Upgrade packages
+      apt: upgrade=safe
+
+    - name: Install NTP
+      apt: pkg=ntpdate state=installed
+
+    - name: Update date
+      command: ntpdate ntp.ubuntu.com
+
+    - name: Install open-vm-tools
+      apt: open-vm-tools
+
+    - name: Remove Apt index
+      apt: apt-xapian-index state=absent
+
+    - name: Create .ssh dir
+      file: state=directory path=/home/superman/.ssh/ owner=superman group=superman
+
+    - name: Copy authorized key to .ssh dir
+      copy: src=files/id_rsa.pub dest=/home/superman/.ssh/authorized_keys owner=superman group=superman mode=0600
+
+    - name: Remove useless motd (help)
+      file: path=/etc/update-motd.d/10-help-text mode="u=rw,g=r,o=r"
+
+    - name: Remove useless motd (landscape)
+      file: path=/usr/share/landscape/landscape-sysinfo.wrapper mode="u=rw,g=r,o=r"
+
+    - name: Remove useless motd (updates)
+      file: path=/etc/update-motd.d/90-updates-available mode="u=rw,g=r,o=r"
+
+    - name: Create figlet title for hosts
+      sudo: no
+      local_action: shell figlet {{ hosts }} > files/title.txt
+
+    - name: Create scripts dir
+      file: state=directory path=/home/superman/scripts/ owner=superman group=superman
+
+    - name: Copy title to scripts dir
+      copy: src=files/title.txt dest=/home/superman/scripts owner=superman group=superman mode=0644
+
+    - name: Copy atitle bach file to /etc/update-motd.d
+      copy: src=files/atitle dest=/etc/update-motd.d/00-atitle owner=root group=root mode=0755
+
+    - name: Add New Relic repository
+      copy: src=files/newrelic.list dest=/etc/apt/sources.list.d/newrelic.list owner=root group=root mode=0644
+
+    - name: Get New Relic GPG Key and add to apt
+      apt_key: id=548C16BF url=https://download.newrelic.com/548C16BF.gpg state=present
+
+    - name: Update packages for New Relic monitoring
+      apt: update_cache=yes
+
+    - name: Install New Relic System monitor
+      apt: pkg=newrelic-sysmond state=installed
+
+    - name: Add Licence key for New Relic
+      command: nrsysmond-config --set license_key=27f9a0b6a99c6e7eb41942e3e2e9657b032f44d3
+
+    - name: Start New Relic Monitoring
+      command: /etc/init.d/newrelic-sysmond start
+
+    - name: Configure and Copy system-vitals.sh
+      template: src=files/system-vitals.sh dest=/home/superman/scripts/system-vitals.sh owner=superman group=superman mode=0755
+
+    - name: setup crontab
+      cron: name="system-vitals" minute="*/5" job="/home/superman/scripts/system-vitals.sh >> /dev/null"
